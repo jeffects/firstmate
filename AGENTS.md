@@ -81,11 +81,12 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
 projects/            cloned repos; gitignored; READ-ONLY for you
-state/               volatile runtime signals; gitignored
-  <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
+state/               volatile runtime signals; gitignored. SECURITY: must NOT be crew-writable - the watcher executes <id>.check.sh and reads <id>.status into firstmate's context, so write access here is code-exec + prompt-injection. The check-provenance guard, untrusted-text sanitizer (bin/fm-sanitize-lib.sh), and PR-URL allowlist are defense in depth on top of this boundary, not a substitute for it.
+  <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth (note text is untrusted; sanitized via bin/fm-sanitize-lib.sh before it reaches firstmate)
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (fm-pr-check appends pr= and verified pr_head= when available)
-  <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
+  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (fm-pr-check appends pr= and verified pr_head=; fm-review-diff appends reviewed_head= to bind a local-only merge to the reviewed commit)
+  <id>.check.sh      optional slow poll per task (e.g. merged-PR check, written by fm-pr-check.sh, which validates the PR URL and stores it in <id>.pr-url as data); the watcher runs it only when its companion <id>.meta exists (or it is a sanctioned generated shim like x-watch.check.sh)
+  <id>.pr-url        PR URL for the merge poll, written by fm-pr-check.sh; read as data by the generated <id>.check.sh, never embedded as code
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in (section 14)
   x-inbox/           generated X-mode pending mention payloads; fmx-respond drains it (section 14)
   x-outbox/          generated X-mode dry-run reply previews; inspect it when FMX_DRY_RUN is set (section 14)

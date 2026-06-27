@@ -116,6 +116,12 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$FM_DAEMON_DIR/fm-classify-lib.sh"
 
+# Shared untrusted-text sanitizer. Crew status text is distilled into the digest
+# and the digest is injected as a MARKED escalation, so it must be cleaned of
+# control bytes (incl. the 0x1f marker separator) and forged markers first.
+# shellcheck source=bin/fm-sanitize-lib.sh
+. "$FM_DAEMON_DIR/fm-sanitize-lib.sh"
+
 # --- tunables ---------------------------------------------------------------
 FM_SUPERVISOR_TARGET_DEFAULT="firstmate:0"
 INJECT_SKIP_DEFAULT="heartbeat"
@@ -280,7 +286,11 @@ classify_signal() {  # <reason-after-colon> <state>
     [ -e "$f" ] || continue
     last=$(last_status_line "$f")
     [ -n "$last" ] || continue
-    distilled="${distilled}$(basename "$f"): ${last} | "
+    # Sanitize only the value embedded in the distilled digest (it crosses into a
+    # marked injection / firstmate's context). The raw $last is kept for the
+    # relevance check and the seen-marker dedup, which compares against the raw
+    # line mark_status_seen records.
+    distilled="${distilled}$(basename "$f"): $(fm_sanitize_untrusted "$last") | "
     status_is_captain_relevant "$last" || continue
     rel=1
     # Dedupe against the catch-all scan: if this status was already escalated
@@ -590,6 +600,11 @@ inject_msg() {  # <message> [state]
   # them. Then prepend the sentinel marker — firstmate's afk-exit contract
   # keys off its presence at the start of the message.
   msg=$(_collapse_newlines "$msg")
+  # Final untrusted-text chokepoint before we prepend the trust marker: strip any
+  # control bytes (incl. a crew-planted 0x1f that could forge a marker) and
+  # neutralize a forged from-firstmate marker. _collapse_newlines already turned
+  # newlines into " - ", so none remain for the sanitizer to fold.
+  msg=$(fm_sanitize_untrusted "$msg")
   msg="${FM_INJECT_MARK}${msg}"
   target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
   tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || return 1

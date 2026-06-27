@@ -44,6 +44,11 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-tmux-lib.sh
 . "$SCRIPT_DIR/fm-tmux-lib.sh"
+# Shared untrusted-text sanitizer: the status log is crew-written, and its note
+# text flows verbatim into the one-line state read firstmate consumes every
+# heartbeat - the always-on injection channel - so it must be cleaned.
+# shellcheck source=bin/fm-sanitize-lib.sh
+. "$SCRIPT_DIR/fm-sanitize-lib.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
@@ -94,10 +99,15 @@ log_verb_of() {  # <line>
   printf '%s' "$v"
 }
 log_note_of() {  # <line>
+  local n
   case "$1" in
-    *:*) local n=${1#*:}; printf '%s' "${n#"${n%%[![:space:]]*}"}" ;;
-    *)   printf '%s' "$1" ;;
+    *:*) n=${1#*:}; n="${n#"${n%%[![:space:]]*}"}" ;;
+    *)   n=$1 ;;
   esac
+  # The note is crew-controlled and lands in firstmate's context, so sanitize it
+  # (drop control bytes incl. 0x1f, neutralize a forged marker) and keep the
+  # one-line state read token-tight by bounding it.
+  fm_sanitize_untrusted "$n" "${FM_CREW_STATE_NOTE_MAX:-400}"
 }
 # Map a status-log verb onto a canonical state for the fallback path.
 map_log_state() {  # <verb>

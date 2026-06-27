@@ -117,6 +117,8 @@ test_check_output_is_queued() {
 printf 'merged: https://example.test/pr/1\n'
 SH
   chmod +x "$check_file"
+  # The watcher's provenance guard only runs a check with a companion task meta.
+  printf 'window=test:fm-task\nkind=ship\n' > "$state/task.meta"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "watcher did not exit for check output"
   grep -F "check: $check_file: merged: https://example.test/pr/1" "$out" >/dev/null || fail "watcher did not print check wake"

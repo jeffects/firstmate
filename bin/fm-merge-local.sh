@@ -44,6 +44,23 @@ default_branch() {
 BRANCH="fm/$ID"
 git -C "$PROJ" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null || { echo "error: branch $BRANCH does not exist in $PROJ" >&2; exit 1; }
 
+# Bind the merge to the reviewed commit (close the review->approve->merge TOCTOU).
+# fm-review-diff.sh records reviewed_head=<sha>; re-resolve the branch HEAD now and
+# refuse unless it still matches, so commits pushed after the captain approved the
+# diff are never silently merged. WT and PROJ share one object store, so the
+# fm/<id> ref resolves identically in both.
+REVIEWED_HEAD=$(grep '^reviewed_head=' "$META" | tail -1 | cut -d= -f2- || true)
+CURRENT_HEAD=$(git -C "$PROJ" rev-parse --verify "refs/heads/$BRANCH^{commit}")
+if [ -z "$REVIEWED_HEAD" ]; then
+  echo "error: no reviewed_head recorded for $ID; run 'bin/fm-review-diff.sh $ID' and have the captain approve before merging" >&2
+  exit 1
+fi
+if [ "$CURRENT_HEAD" != "$REVIEWED_HEAD" ]; then
+  echo "REFUSED: $BRANCH HEAD has moved since review (reviewed ${REVIEWED_HEAD}, now ${CURRENT_HEAD})." >&2
+  echo "Re-review with 'bin/fm-review-diff.sh $ID' and get fresh approval, then retry." >&2
+  exit 1
+fi
+
 DEFAULT=$(default_branch) || { echo "error: cannot determine default branch for $PROJ; expected origin/HEAD, main, or master" >&2; exit 1; }
 
 # The project's main checkout must be on its default branch and clean, so the

@@ -64,15 +64,16 @@ first_line() {
 
 prune_gone_branches() {
   # Delete local branches whose upstream tracking branch is gone - the remote
-  # branch was deleted, which in this fleet means its PR merged - as long as
-  # nothing still needs them. Never the checked-out branch, and never a branch
-  # that still has a worktree (a live or not-yet-torn-down task). "Gone" plus
-  # "no worktree" already proves the work landed: teardown removes a branch's
-  # worktree only after confirming the work reached the remote. We deliberately
-  # do NOT also require the branch to be an ancestor of origin/<default> - PRs in
-  # this fleet are squash-merged, so a merged branch is never an ancestor and
-  # such a check would prune nothing. The no-worktree guard is the real safety
-  # net. Set FM_FLEET_PRUNE=0 to skip pruning entirely.
+  # branch was deleted, which in this fleet usually means its PR merged - as long
+  # as nothing still needs them. Never the checked-out branch, and never a branch
+  # that still has a worktree (a live or not-yet-torn-down task). The no-worktree
+  # guard is the primary safety net; on top of it, an ancestry guard (below)
+  # refuses to delete a branch that still has commits reachable from no remote,
+  # because `[gone]` can also mean a PR was closed UNMERGED or a remote branch was
+  # deleted by hand, and `git branch -D` would discard that work. We do NOT use an
+  # "ancestor of origin/<default>" check - PRs here are squash-merged, so a merged
+  # branch is never an ancestor - the ancestry guard keys on "commits on no
+  # remote" instead. Set FM_FLEET_PRUNE=0 to skip pruning entirely.
   [ "${FM_FLEET_PRUNE:-1}" != "0" ] || return 0
 
   local worktree_branches current refline branch track
@@ -87,6 +88,19 @@ prune_gone_branches() {
     [ -n "$branch" ] || continue
     [ "$branch" != "$current" ] || continue
     if printf '%s\n' "$worktree_branches" | grep -Fxq -- "$branch"; then
+      continue
+    fi
+    # Ancestry guard against force-deleting unmerged work. `git branch -D` deletes
+    # regardless of merge state, so a branch whose upstream went `[gone]` for a
+    # reason OTHER than a merge (a PR closed unmerged, a remote branch deleted by
+    # hand) would otherwise be discarded with its commits. If the branch still has
+    # commits reachable from NO remote-tracking branch, it is not provably landed:
+    # skip it. This is intentionally conservative - a squash-merged branch whose
+    # distinct commits live on no remote is also skipped here - which only means a
+    # merged branch may linger locally (harmless; the normal teardown path deletes
+    # the just-merged branch directly). Never discarding unmerged work wins.
+    if [ -n "$(git -C "$PROJ" log "$branch" --not --remotes --format=%H 2>/dev/null | head -1)" ]; then
+      echo "$label: kept $branch (commits on no remote; not provably merged)"
       continue
     fi
     if git -C "$PROJ" branch -D -- "$branch" >/dev/null 2>&1; then

@@ -2,6 +2,11 @@
 # Shared durable wake queue and portable lock helpers.
 
 FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Shared untrusted-text sanitizer (fm_wake_clean_field folds into it below so the
+# durable queue gets the same 0x1f/control-byte/marker defense as every other
+# untrusted-text boundary).
+# shellcheck source=bin/fm-sanitize-lib.sh
+. "$FM_WAKE_LIB_DIR/fm-sanitize-lib.sh"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_WAKE_DEFAULT_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -315,8 +320,14 @@ fm_lock_release() {
   rmdir "$lockdir" 2>/dev/null || true
 }
 
+# Clean one wake-queue field: a single-line, control-byte-free, marker-safe,
+# length-bounded value. Reads stdin (it is used as a pipe filter), routing through
+# the shared sanitizer so a status note or key carrying a 0x1f or other control
+# byte cannot forge a marker or break the TAB-delimited queue record.
 fm_wake_clean_field() {
-  LC_ALL=C tr '\t\r\n' '   '
+  local in
+  in=$(cat)
+  fm_sanitize_untrusted "$in"
 }
 
 fm_wake_append() {
