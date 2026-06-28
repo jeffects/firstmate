@@ -17,6 +17,9 @@ Routine watcher polling, re-arm no-ops, elapsed waiting time, and absorbed benig
 Crew status files are append-only wake-event logs, not current-state fields.
 `bin/fm-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes the matching no-mistakes run, active or terminal, to the crew's own branch and keeps that run-step authoritative even if the pane has closed.
 Only when no matching run exists does it fall back to the pane busy-signature and then the status log; a dead pane without a run reports unknown instead of trusting a stale log.
+Crew status text, captured pane content, and durable wake-queue fields are attacker-influenceable, so each crossing into firstmate's context routes through the shared sanitizer (`bin/fm-sanitize-lib.sh`): it strips control bytes - including the `0x1f` separator the from-firstmate and afk trust markers are built from - neutralizes a forged marker, and bounds length.
+The watcher also runs a `state/<id>.check.sh` only when its companion `state/<id>.meta` exists (the sanctioned generated `x-watch` relay shim aside), so a check script planted in `state/` with no recorded task is never executed.
+Both are defense in depth on top of the hard boundary that `state/` must not be crew-writable, since the watcher executes check scripts and reads status text into firstmate's context.
 Optional X mode rides the same check path: bootstrap drops a local `state/x-watch.check.sh` shim only after the user opts in with `FMX_PAIRING_TOKEN`, and non-X homes keep the default watcher behavior.
 
 Routine re-arms go through `bin/fm-watch-arm.sh`, which forks the watcher as a tracked child, verifies it is genuinely alive with a fresh liveness beacon, and prints exactly one honest status line (`started` / `healthy` / `FAILED`, the last exiting non-zero) - never a false `already running` off a dying process.
@@ -78,6 +81,7 @@ The `data/secondmates.md` line schema and the secondmate environment variables a
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.
 `no-mistakes` projects run the full validation pipeline, `direct-PR` projects open PRs without that pipeline, and `local-only` projects stay local until firstmate performs an approved fast-forward merge.
+That local merge is bound to the reviewed commit: `fm-review-diff.sh` records the reviewed branch HEAD into the task meta and `fm-merge-local.sh` refuses unless the branch HEAD still matches, closing the window where a crew pushes new commits between the captain approving the diff and the merge.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
 Landed work is accepted when `HEAD` is reachable from any remote-tracking branch, when a PR for the current `HEAD` is merged, or when the worktree content is already present in the freshly fetched default branch.
 That content check lets a squash-merged PR whose head branch was deleted tear down cleanly without using `--force`; `local-only` work instead tears down after the approved local default-branch merge or after the branch is pushed to any remote.
@@ -110,7 +114,7 @@ Bootstrap and PR-based teardown refresh remote-backed project clones when the cl
 Clean default-branch clones fast-forward to `origin/<default>`, and a clean detached HEAD that holds no unique commits is re-attached to the default branch before the same fast-forward path runs.
 Dirty clones, non-default branches, detached HEADs with unique commits, diverged defaults, and default branches checked out in another worktree are reported as `STUCK:` with their behind count and left untouched.
 Local-only projects, clones without an origin remote, and fetch failures remain benign skips.
-The refresh also prunes local branches whose remote is gone and that no worktree still needs.
+The refresh also prunes local branches whose remote is gone and that no worktree still needs, but never deletes a branch that still has commits reachable from no remote, so a branch whose upstream went away for a reason other than a merge (a PR closed unmerged, a remote branch deleted by hand) is kept rather than discarded.
 
 ## Self-updates stay safe
 

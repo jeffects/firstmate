@@ -95,6 +95,9 @@ SH
 
 # fm_git_identity [name] [email]: export a fixed author/committer identity so
 # fixture commits never depend on the host git config.
+# name/email are optional (defaults below); callers may invoke with no args, so
+# silence SC2120/SC2119 for these intentionally-optional parameters.
+# shellcheck disable=SC2120
 fm_git_identity() {
   export GIT_AUTHOR_NAME=${1:-fmtest} GIT_AUTHOR_EMAIL=${2:-fmtest@example.invalid}
   export GIT_COMMITTER_NAME=$GIT_AUTHOR_NAME GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL

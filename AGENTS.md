@@ -81,11 +81,12 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
 projects/            cloned repos; gitignored; READ-ONLY for you
-state/               volatile runtime signals; gitignored
-  <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth
+state/               volatile runtime signals; gitignored. SECURITY: must NOT be crew-writable - the watcher executes <id>.check.sh and reads <id>.status into firstmate's context, so write access here is code-exec + prompt-injection. The check-provenance guard, untrusted-text sanitizer (bin/fm-sanitize-lib.sh), and PR-URL allowlist are defense in depth on top of this boundary, not a substitute for it.
+  <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth (note text is untrusted; sanitized via bin/fm-sanitize-lib.sh before it reaches firstmate)
   <id>.turn-ended    touched by turn-end hooks
-  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (fm-pr-check appends pr= and verified pr_head= when available)
-  <id>.check.sh      optional slow poll you write per task (e.g. merged-PR check)
+  <id>.meta          written by fm-spawn: window=, worktree=, project=, harness=, kind=, mode=, yolo=; kind=secondmate also records home= and projects= (fm-pr-check appends pr= and verified pr_head=; fm-review-diff appends reviewed_head= to bind a local-only merge to the reviewed commit)
+  <id>.check.sh      optional slow poll per task (e.g. merged-PR check, written by fm-pr-check.sh, which validates the PR URL and stores it in <id>.pr-url as data); the watcher runs it only when its companion <id>.meta exists (or it is a sanctioned generated shim like x-watch.check.sh)
+  <id>.pr-url        PR URL for the merge poll, written by fm-pr-check.sh; read as data by the generated <id>.check.sh, never embedded as code
   x-watch.check.sh   generated X-mode relay poll shim; present only when opted in (section 14)
   x-inbox/           generated X-mode pending mention payloads; fmx-respond drains it (section 14)
   x-outbox/          generated X-mode dry-run reply previews; inspect it when FMX_DRY_RUN is set (section 14)
@@ -168,7 +169,7 @@ Load `harness-adapters` before any spawn, recovery, trust-dialog handling, harne
 You may have been restarted mid-flight.
 Reconcile reality with your records before doing anything else:
 
-1. Run `bin/fm-lock.sh` to acquire the session lock (it records the harness process PID, which is session-stable).
+1. Run `bin/fm-lock.sh` to acquire the session lock (it records the harness process PID, which is session-stable, plus its start time so a recycled PID is recognized as stale rather than mistaken for the original live holder).
    If it refuses because another live session holds the lock, tell the captain another active session is already managing the work and operate read-only until resolved.
 2. Drain queued wakes with `bin/fm-wake-drain.sh` and keep the printed records as the first work queue for this recovery turn.
 3. Read `data/backlog.md`, `data/secondmates.md` if present, every `state/*.meta`, and every `state/*.status`.
@@ -370,7 +371,7 @@ A ship task's path from `done` to landed on `main` is set by the project's `mode
 
 - **no-mistakes** - the stages below as written: no-mistakes validation pipeline -> PR -> captain merge.
 - **direct-PR** - no pipeline. The crewmate pushes and opens the PR itself (its brief says so) and reports `done: PR <url>`. Skip the Validate step and go straight to PR ready (run `fm-pr-check`, relay the PR). Teardown uses the normal landed-work check.
-- **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>`, relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
+- **local-only** - no remote, no PR. The crewmate stops at `done: ready in branch fm/<id>`. Review the diff with `bin/fm-review-diff.sh <id>` (it records the reviewed branch HEAD into the task meta as `reviewed_head=`), relay a one-paragraph summary to the captain, and on approval run `bin/fm-merge-local.sh <id>` to fast-forward local `main` (it refuses anything but a clean fast-forward - if it does, have the crewmate rebase - and refuses if the branch HEAD has moved since review, in which case re-review with `bin/fm-review-diff.sh <id>` and get fresh approval before retrying). No `fm-pr-check`. Then teardown, whose safety check requires the branch already merged into local `main`, OR the work pushed to any remote (a fork counts - relevant for upstream-contribution PRs on a local-only-registered project).
 
 When reviewing any crewmate branch diff, use `bin/fm-review-diff.sh <id>` rather than `git diff <default>...branch` directly.
 Pooled clones keep their local default refs frozen at clone time and can lag `origin`; the helper always compares against the authoritative base.

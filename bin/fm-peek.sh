@@ -10,6 +10,13 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
+# The captured pane is attacker-influenceable crew output that lands directly in
+# firstmate's context; sanitize it per-line (drop control bytes incl. 0x1f,
+# neutralize a forged marker) while preserving the line structure that makes a
+# peek readable.
+# shellcheck source=bin/fm-sanitize-lib.sh
+. "$SCRIPT_DIR/fm-sanitize-lib.sh"
+
 "$SCRIPT_DIR/fm-guard.sh" || true
 
 resolve() {
@@ -32,4 +39,4 @@ resolve() {
 
 T=$(resolve "$1")
 N=${2:-40}
-tmux capture-pane -p -t "$T" -S -"$N"
+tmux capture-pane -p -t "$T" -S -"$N" | fm_sanitize_untrusted_stream

@@ -538,6 +538,8 @@ test_arm_propagates_immediate_wake_before_confirmation() {
 printf 'merged: https://example.test/pr/7\n'
 SH
   chmod +x "$check_file"
+  # The watcher's provenance guard only runs a check with a companion task meta.
+  printf 'window=test:fm-task\nkind=ship\n' > "$state/task.meta"
   rc=0
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=0 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" || rc=$?
   [ "$rc" -eq 0 ] || fail "arm returned non-zero for an immediate wake (status $rc): $(cat "$armout")"

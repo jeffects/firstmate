@@ -15,6 +15,31 @@
 # bin/fm-watch-arm.sh through the harness's tracked background mechanism. Direct
 # duplicate invocations of this script still no-op through the watcher singleton
 # lock.
+#
+# Wake-source taxonomy (and why POLLING, not inotify/fsevents):
+#   The watcher derives every wake from four sources, each read on a timed poll:
+#     1. signal     - state/*.status writes + state/*.turn-ended turn-end markers,
+#                     detected by a persisted size:mtime signature (.seen-*).
+#     2. stale      - a recorded window's tmux pane going hash-stable with no busy
+#                     footer, read via `tmux capture-pane`.
+#     3. check      - per-task state/<id>.check.sh output on a slow cadence.
+#     4. heartbeat  - a periodic fleet-scan backstop.
+#   These sources are heterogeneous: a tmux pane is not a file at all (its content
+#   lives in the tmux server, with no inode to watch), and a status FILE can be
+#   written while NO watcher is running (between an actionable exit and the next
+#   re-arm). A file-event API (inotify/fsevents) cannot observe pane state, would
+#   miss any write that lands while unarmed, is not portable across Linux/macOS,
+#   and needs a long-lived process per home anyway. A bounded poll over a persisted
+#   signature is uniform across all four sources, catches changes that happened
+#   while down, is trivially portable, and costs nothing meaningful at this scale.
+#   So the design is deliberately poll-based, not event-based.
+#
+# SECURITY: state/ MUST NOT be crew-writable. The watcher executes
+# state/<id>.check.sh and reads state/*.status into firstmate's context; a crew
+# able to write state/ could plant a check script or forge status text. The
+# check-provenance guard (only run checks with a companion <id>.meta, plus the
+# sanctioned x-watch shim) and bin/fm-sanitize-lib.sh are defense in depth on top
+# of that filesystem boundary, not a substitute for it.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -156,12 +181,27 @@ recorded_windows() {
   done
 }
 
+# Read a small non-negative integer counter file, defaulting to 0 for a missing,
+# empty, or corrupted/non-numeric file. Mirrors the .stale-since-* numeric guard
+# (below) so a garbled or planted .heartbeat-streak / .count-* file can never
+# break the watcher's arithmetic or inject through bash arithmetic evaluation
+# (which would evaluate an array-subscript command substitution in a tainted
+# operand). state/ MUST NOT be crew-writable, but the watcher defends anyway.
+read_counter() {
+  local v
+  v=$(cat "$1" 2>/dev/null || echo 0)
+  case "$v" in
+    ''|*[!0-9]*) v=0 ;;
+  esac
+  printf '%s' "$v"
+}
+
 # Exit reporting a wake. Consecutive heartbeats with no other wake in between
 # mean an idle fleet, so the heartbeat interval backs off exponentially
 # (base * 2^streak, capped at HEARTBEAT_MAX); any real wake resets the cadence.
 wake() {
   case "$1" in
-    heartbeat*) echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak" ;;
+    heartbeat*) echo $(( $(read_counter "$STATE/.heartbeat-streak") + 1 )) > "$STATE/.heartbeat-streak" ;;
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
   esac
   echo "$1"
@@ -288,6 +328,23 @@ while :; do
   if [ "$(age_of "$STATE/.last-check")" -ge "$CHECK_INTERVAL" ]; then
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
+      # Provenance guard: only execute a check that corresponds to a recorded task
+      # (its companion state/<id>.meta exists), plus explicitly sanctioned
+      # generated shims that legitimately have no <id>.meta. A planted
+      # state/zz-pwn.check.sh with no task is ignored, so a foothold in state/
+      # cannot get arbitrary code run by the watcher. state/ MUST NOT be
+      # crew-writable; this is defense in depth on top of that.
+      cbase=$(basename "$c")
+      cid=${cbase%.check.sh}
+      case "$cid" in
+        x-watch) : ;;  # X-mode relay poll shim (bin/fm-x-poll.sh); generated, no task meta
+        *)
+          if [ ! -f "$STATE/$cid.meta" ]; then
+            triage_log "ignored check with no task meta: $cbase"
+            continue
+          fi
+          ;;
+      esac
       out=$(run_check "$c")
       if [ -n "$out" ]; then
         reason="check: $c: $out"
@@ -365,7 +422,7 @@ EOF
     ssf="$STATE/.stale-since-$key"
     prev=$(cat "$hf" 2>/dev/null || true)
     if [ "$h" = "$prev" ]; then
-      n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
+      n=$(( $(read_counter "$cf") + 1 ))
       echo "$n" > "$cf"
       # Busy match runs on the last 6 non-blank lines only (the TUI footer area,
       # where every verified harness renders its busy indicator) so busy-looking
@@ -432,7 +489,7 @@ EOF
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
   # no-change heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any
   # surfaced non-heartbeat wake.
-  streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
+  streak=$(read_counter "$STATE/.heartbeat-streak")
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
@@ -456,7 +513,7 @@ EOF
       wake "heartbeat"
     else
       touch "$STATE/.last-heartbeat"
-      echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
+      echo $(( $(read_counter "$STATE/.heartbeat-streak") + 1 )) > "$STATE/.heartbeat-streak"
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
   fi

@@ -80,6 +80,16 @@ fi
 git -C "$WT" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || { echo "error: base $BASE does not exist in $WT" >&2; exit 1; }
 git -C "$WT" rev-parse --verify --quiet "$BRANCH^{commit}" >/dev/null || { echo "error: branch $BRANCH does not resolve in $WT" >&2; exit 1; }
 
+# Bind review to merge: record the exact branch HEAD being reviewed into the task
+# meta. fm-merge-local.sh re-resolves the branch HEAD and refuses to merge unless
+# it still equals this, closing the review->approve->merge TOCTOU (a crew pushing
+# new commits after the captain approved the diff). Last write wins (tail -1).
+REVIEWED_HEAD=$(git -C "$WT" rev-parse --verify "$BRANCH^{commit}")
+META_TMP=$(mktemp "$META.XXXXXX")
+grep -v '^reviewed_head=' "$META" > "$META_TMP" 2>/dev/null || true
+printf 'reviewed_head=%s\n' "$REVIEWED_HEAD" >> "$META_TMP"
+mv -f "$META_TMP" "$META"
+
 echo "diff base: $BASE"
 if git -C "$WT" diff --quiet "$BASE...$BRANCH" --; then
   echo "no changes vs $BASE"

@@ -15,9 +15,10 @@ Each file also starts with a short header comment.
 | `fm-home-seed.sh`        | Lease/provision a secondmate home transactionally, clone projects, initialize gates, and maintain `data/secondmates.md` |
 | `fm-spawn.sh`            | Spawn one task, several `id=repo` pairs, or a persistent secondmate with `--secondmate`; ship/scout spawns require an isolated treehouse worktree; secondmate spawns locally sync the home before launch |
 | `fm-project-mode.sh`     | Resolve a project's delivery mode and `+yolo` flag from `data/projects.md`                                          |
-| `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval                                           |
-| `fm-review-diff.sh`      | Review a crewmate branch against the authoritative base, with optional `--stat` output                              |
+| `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval, refusing unless the branch HEAD still matches the recorded `reviewed_head=` |
+| `fm-review-diff.sh`      | Review a crewmate branch against the authoritative base, with optional `--stat` output; record the reviewed HEAD (`reviewed_head=`) into the task meta to bind the later local merge |
 | `fm-marker-lib.sh`       | Shared from-firstmate request marker and detector sourced by `fm-send.sh`, `fm-brief.sh`, and tests                 |
+| `fm-sanitize-lib.sh`     | Shared untrusted-crew-text sanitizer (strip control bytes incl. the `0x1f` marker separator, neutralize a forged from-firstmate marker, bound length) sourced by `fm-crew-state.sh`, `fm-peek.sh`, `fm-wake-lib.sh`, and `fm-supervise-daemon.sh` |
 | `fm-watch-arm.sh`        | Verified per-home watcher re-arm; reports `started`, `healthy`, or `FAILED`; `--restart` relaunches only this home's watcher |
 | `fm-watch.sh`            | Singleton-safe always-on watcher; absorbs benign wakes in bash, queues and exits only for actionable wakes, and reverts to daemon-owned one-shot behavior while `state/.afk` exists |
 | `fm-supervise-daemon.sh` | Presence-gated sub-supervisor for walk-away (`/afk`) supervision: wraps `fm-watch.sh`, uses the shared wake classifier, self-handles routine wakes in bash, and escalates only captain-relevant events as one verified, batched, single-line digest prefixed with a sentinel marker |
@@ -31,7 +32,7 @@ Each file also starts with a short header comment.
 | `fm-send.sh`             | Send one verified literal line (or `--key Escape`) to a direct-report window; exits non-zero on confirmed swallowed Enter; bare `kind=secondmate` targets are marked as from-firstmate; slash commands and codex `$...` skill invocations get popup-settle before Enter; text sends pause `FM_SEND_SETTLE` seconds after success |
 | `fm-tmux-lib.sh`         | Shared tmux pane primitives for busy detection, dim-ghost-aware and border-aware composer detection, and verified submit retry |
 | `fm-peek.sh`             | Print a bounded tail of a crewmate pane                                                                             |
-| `fm-pr-check.sh`         | Record `pr=` and a verified `pr_head=` when available for a PR-ready task, then arm the watcher's merge poll        |
+| `fm-pr-check.sh`         | Validate the PR URL against a strict GitHub allowlist, record `pr=` and a verified `pr_head=` when available, write the URL to `state/<id>.pr-url` for the generated check to read as data (not embedded code), then arm the watcher's merge poll |
 | `fm-promote.sh`          | Promote a scout task in place so it becomes a protected ship task                                                   |
 | `fm-teardown.sh`         | Return a clean, landed ship worktree or retire/release a secondmate home; requires scout reports, checks child work, and prints the backlog reminder |
 | `fm-harness.sh`          | Detect the running harness; resolve the effective crewmate harness                                                  |

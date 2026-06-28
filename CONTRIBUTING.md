@@ -62,6 +62,7 @@ for test_script in tests/*.test.sh; do "$test_script"; done   # behavior tests, 
 tests/fm-wake-queue.test.sh               # durable wake queue losslessness, catch-up, double-drain, duplicate-collapse, and drain liveness guard tests
 tests/fm-watcher-lock.test.sh             # watcher singleton, lock-race, watch-arm liveness, and guard-warning tests
 tests/fm-watch-triage.test.sh             # always-on watcher triage: benign absorb, actionable surface, stale wedge threshold, heartbeat backstop, and afk one-shot coherence
+tests/fm-watch-hardening.test.sh          # watcher check-script provenance (companion-meta requirement, sanctioned x-watch shim) and numeric counter-file guards
 tests/fm-daemon.test.sh                   # sub-supervisor classifier, /afk presence-gating, max-defer, composer, and fm-send submit tests
 tests/fm-send-settle.test.sh              # fm-send post-submit settle pause, tuning, disable, and --key bypass tests
 tests/fm-send-popup-settle.test.sh        # fm-send pre-Enter popup-settle selection for slash commands and codex $skill invocations
@@ -80,6 +81,9 @@ tests/fm-secondmate-lifecycle-e2e.test.sh # persistent secondmate routing, seedi
 tests/fm-secondmate-safety.test.sh        # secondmate home safety, idle charter, handoff validation, and teardown boundary tests
 tests/fm-teardown.test.sh                 # fm-teardown.sh landed-work safety and reminder checks: fork-remote allow, squash/content landings, dirty and unlanded refusals, PR-head metadata, tasks-axi reminder, --force override
 tests/fm-crew-state.test.sh               # fm-crew-state.sh current-state reconciliation: run-step authority including closed panes, stale needs-decision/blocked superseded by a resumed run, genuine-parked, cross-branch attribution, pane/status-log fallback, scout skip, torn-down/missing-meta graceful
+tests/fm-sanitize.test.sh                 # shared untrusted-crew-text sanitizer: 0x1f and C0/DEL control-byte stripping, forged from-firstmate marker neutralization, length bounding, UTF-8 preservation, and per-line stream form
+tests/fm-pr-check.test.sh                 # fm-pr-check.sh PR-URL GitHub allowlist validation, rejection of malicious/non-GitHub URLs before any write, and data-file indirection so the generated check reads the URL as data not code
+tests/fm-merge-local.test.sh              # fm-merge-local.sh local-only review->merge SHA bind (reviewed_head refuse-on-moved-HEAD) plus preserved clean-fast-forward-only behavior
 [ "$(readlink CLAUDE.md)" = "AGENTS.md" ]
 [ "$(readlink .claude/skills)" = "../.agents/skills" ]
 tmp=$(mktemp -d) && printf 'done: smoke\n' > "$tmp/smoke.status" && FM_STATE_OVERRIDE="$tmp" FM_SIGNAL_GRACE=1 FM_POLL=1 FM_HEARTBEAT=999999 bin/fm-watch-arm.sh  # watcher re-arm smoke test (prints arm status, then an actionable signal)

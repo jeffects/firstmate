@@ -116,6 +116,12 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$FM_DAEMON_DIR/fm-classify-lib.sh"
 
+# Shared untrusted-text sanitizer. Crew status text is distilled into the digest
+# and the digest is injected as a MARKED escalation, so it must be cleaned of
+# control bytes (incl. the 0x1f marker separator) and forged markers first.
+# shellcheck source=bin/fm-sanitize-lib.sh
+. "$FM_DAEMON_DIR/fm-sanitize-lib.sh"
+
 # --- tunables ---------------------------------------------------------------
 FM_SUPERVISOR_TARGET_DEFAULT="firstmate:0"
 INJECT_SKIP_DEFAULT="heartbeat"
@@ -136,6 +142,15 @@ MAX_DEFER_SECS_DEFAULT=300
 INJECT_FAIL_SLEEP_DEFAULT=30
 INJECT_CONFIRM_RETRIES_DEFAULT=3
 INJECT_CONFIRM_SLEEP_DEFAULT=0.5
+# Length bound for the digest-level sanitize in inject_msg. Each escalation item
+# is already control-byte-stripped and length-bounded (2000) per-item in
+# classify_signal, and escalate_flush clears the buffer on a successful inject, so
+# the digest pass must strip control bytes / neutralize a forged marker WITHOUT
+# re-truncating - a default 2000 cap here would silently drop escalations from a
+# busy multi-hour afk catch-up and break the "nothing is lost" guarantee. Set
+# effectively unbounded for realistic accumulation while still guarding against a
+# pathological multi-megabyte flood.
+INJECT_SANITIZE_MAX_DEFAULT=200000
 CRASH_THRESHOLD_DEFAULT=10
 CRASH_WINDOW_DEFAULT=60
 CRASH_BACKOFF_DEFAULT=60
@@ -280,7 +295,11 @@ classify_signal() {  # <reason-after-colon> <state>
     [ -e "$f" ] || continue
     last=$(last_status_line "$f")
     [ -n "$last" ] || continue
-    distilled="${distilled}$(basename "$f"): ${last} | "
+    # Sanitize only the value embedded in the distilled digest (it crosses into a
+    # marked injection / firstmate's context). The raw $last is kept for the
+    # relevance check and the seen-marker dedup, which compares against the raw
+    # line mark_status_seen records.
+    distilled="${distilled}$(basename "$f"): $(fm_sanitize_untrusted "$last") | "
     status_is_captain_relevant "$last" || continue
     rel=1
     # Dedupe against the catch-all scan: if this status was already escalated
@@ -590,6 +609,14 @@ inject_msg() {  # <message> [state]
   # them. Then prepend the sentinel marker — firstmate's afk-exit contract
   # keys off its presence at the start of the message.
   msg=$(_collapse_newlines "$msg")
+  # Final untrusted-text chokepoint before we prepend the trust marker: strip any
+  # control bytes (incl. a crew-planted 0x1f that could forge a marker) and
+  # neutralize a forged from-firstmate marker. _collapse_newlines already turned
+  # newlines into " - ", so none remain for the sanitizer to fold. Pass an
+  # effectively-unbounded max so a batched escalation digest is never truncated
+  # (escalate_flush clears the buffer on success, so truncation would silently
+  # drop escalations); per-item text is already bounded in classify_signal.
+  msg=$(fm_sanitize_untrusted "$msg" "${FM_INJECT_SANITIZE_MAX:-$INJECT_SANITIZE_MAX_DEFAULT}")
   msg="${FM_INJECT_MARK}${msg}"
   target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
   tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || return 1

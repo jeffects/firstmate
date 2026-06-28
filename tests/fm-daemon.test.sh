@@ -156,6 +156,32 @@ test_escalate_batches_into_one_digest() {
   pass "multiple escalations flush as a single batched digest"
 }
 
+test_escalate_long_digest_not_truncated() {
+  # Regression: a busy multi-hour afk catch-up can buffer enough escalations that
+  # the joined digest exceeds the sanitizer's default 2000-char bound. inject_msg
+  # must NOT re-truncate the digest (escalate_flush clears the buffer on a
+  # successful inject, so a dropped tail is lost forever). Build a >2000-char
+  # digest whose final escalation lands well past char 2000 and assert it survives.
+  local dir state fakebin sent capture i
+  dir=$(make_supercase long-digest)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  sent="$dir/sent.log"; : > "$sent"
+  capture="$dir/pane.txt"; : > "$capture"
+  for i in $(seq 1 30); do
+    escalate_add "$state" "event $i: needs-decision: a fairly long distilled status line used to pad the digest well beyond two thousand characters"
+  done
+  escalate_add "$state" "TAILSENTINEL_PRESERVED done: PR https://x/y/pull/999"
+  afk_enter "$state"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
+    || fail "escalate_flush failed on a long digest"
+  grep -F 'TAILSENTINEL_PRESERVED done: PR https://x/y/pull/999' "$sent" >/dev/null \
+    || fail "long digest was truncated: tail escalation past 2000 chars was dropped"
+  [ -s "$state/.subsuper-escalations" ] && fail "escalation buffer not cleared after long-digest flush"
+  pass "a long batched digest is delivered whole (not truncated at the default bound)"
+}
+
 test_escalate_batch_age_uses_first_append() {
   local dir state fakebin sent capture
   dir=$(make_supercase batch-age)
@@ -692,6 +718,7 @@ test_stale_terminal_escalates
 test_housekeeping_persistent_stale_escalates
 test_housekeeping_resumed_stale_cleared
 test_escalate_batches_into_one_digest
+test_escalate_long_digest_not_truncated
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
 test_handle_wake_routes_self_and_escalate
