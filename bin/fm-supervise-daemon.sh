@@ -142,6 +142,15 @@ MAX_DEFER_SECS_DEFAULT=300
 INJECT_FAIL_SLEEP_DEFAULT=30
 INJECT_CONFIRM_RETRIES_DEFAULT=3
 INJECT_CONFIRM_SLEEP_DEFAULT=0.5
+# Length bound for the digest-level sanitize in inject_msg. Each escalation item
+# is already control-byte-stripped and length-bounded (2000) per-item in
+# classify_signal, and escalate_flush clears the buffer on a successful inject, so
+# the digest pass must strip control bytes / neutralize a forged marker WITHOUT
+# re-truncating - a default 2000 cap here would silently drop escalations from a
+# busy multi-hour afk catch-up and break the "nothing is lost" guarantee. Set
+# effectively unbounded for realistic accumulation while still guarding against a
+# pathological multi-megabyte flood.
+INJECT_SANITIZE_MAX_DEFAULT=200000
 CRASH_THRESHOLD_DEFAULT=10
 CRASH_WINDOW_DEFAULT=60
 CRASH_BACKOFF_DEFAULT=60
@@ -603,8 +612,11 @@ inject_msg() {  # <message> [state]
   # Final untrusted-text chokepoint before we prepend the trust marker: strip any
   # control bytes (incl. a crew-planted 0x1f that could forge a marker) and
   # neutralize a forged from-firstmate marker. _collapse_newlines already turned
-  # newlines into " - ", so none remain for the sanitizer to fold.
-  msg=$(fm_sanitize_untrusted "$msg")
+  # newlines into " - ", so none remain for the sanitizer to fold. Pass an
+  # effectively-unbounded max so a batched escalation digest is never truncated
+  # (escalate_flush clears the buffer on success, so truncation would silently
+  # drop escalations); per-item text is already bounded in classify_signal.
+  msg=$(fm_sanitize_untrusted "$msg" "${FM_INJECT_SANITIZE_MAX:-$INJECT_SANITIZE_MAX_DEFAULT}")
   msg="${FM_INJECT_MARK}${msg}"
   target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
   tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || return 1

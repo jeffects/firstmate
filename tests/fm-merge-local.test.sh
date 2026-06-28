@@ -89,6 +89,28 @@ test_merge_refused_without_recorded_review() {
   pass "merge-local refuses when review was never run (no reviewed_head)"
 }
 
+test_merge_refused_when_branch_diverged() {
+  local id state repo wt default before out rc
+  id="loc-div1"; state="$TMP_ROOT/div/state"
+  fm_git_identity
+  read -r repo wt default <<<"$(build_case div "$id")"
+  write_meta "$state" "$id" "$repo" "$wt"
+  run_review "$state" "$id" >/dev/null 2>&1 || fail "review-diff failed"
+  # The default branch advances independently so the reviewed branch is no longer a
+  # fast-forward of it (diverged), while the branch HEAD still equals reviewed_head
+  # (so the SHA-bind passes and we reach the ancestor/fast-forward check).
+  printf 'mainline\n' > "$repo/mainline.txt"
+  git -C "$repo" add mainline.txt
+  git -C "$repo" commit -qm mainline
+  before=$(git -C "$repo" rev-parse "$default")
+  out=$(run_merge "$state" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "merge-local must refuse a diverged (non-fast-forward) branch"
+  printf '%s' "$out" | grep -F "is not a fast-forward" >/dev/null || fail "diverged refusal message missing: $out"
+  [ "$(git -C "$repo" rev-parse "$default")" = "$before" ] || fail "default advanced despite diverged refusal"
+  pass "merge-local refuses a diverged branch (clean fast-forward-only preserved)"
+}
+
 test_merge_succeeds_when_head_matches_review
 test_merge_refused_when_head_moved_after_review
 test_merge_refused_without_recorded_review
+test_merge_refused_when_branch_diverged

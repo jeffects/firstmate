@@ -72,14 +72,17 @@ if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ]; then
   exit 1
 fi
 
-# Clean fast-forward only: DEFAULT must be an ancestor of BRANCH.
-if ! git -C "$PROJ" merge-base --is-ancestor "$DEFAULT" "$BRANCH"; then
+# Clean fast-forward only: DEFAULT must be an ancestor of the reviewed commit.
+# Check and merge against the verified CURRENT_HEAD (== REVIEWED_HEAD), never the
+# re-resolved $BRANCH ref, so the whole operation is pinned to the reviewed SHA
+# and a commit pushed in the same-process window cannot slip in.
+if ! git -C "$PROJ" merge-base --is-ancestor "$DEFAULT" "$CURRENT_HEAD"; then
   echo "REFUSED: $BRANCH is not a fast-forward of $DEFAULT (it has diverged)." >&2
   echo "Have the crewmate rebase $BRANCH onto $DEFAULT, then retry." >&2
   exit 1
 fi
 
 before=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
-git -C "$PROJ" merge --ff-only "$BRANCH" >/dev/null
+git -C "$PROJ" merge --ff-only "$CURRENT_HEAD" >/dev/null
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
 echo "merged $BRANCH into local $DEFAULT ($before -> $after) in $PROJ"
