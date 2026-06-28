@@ -169,7 +169,7 @@ Load `harness-adapters` before any spawn, recovery, trust-dialog handling, harne
 You may have been restarted mid-flight.
 Reconcile reality with your records before doing anything else:
 
-1. Run `bin/fm-lock.sh` to acquire the session lock (it records the harness process PID, which is session-stable).
+1. Run `bin/fm-lock.sh` to acquire the session lock (it records the harness process PID, which is session-stable, plus its start time so a recycled PID is recognized as stale rather than mistaken for the original live holder).
    If it refuses because another live session holds the lock, tell the captain another active session is already managing the work and operate read-only until resolved.
 2. Drain queued wakes with `bin/fm-wake-drain.sh` and keep the printed records as the first work queue for this recovery turn.
 3. Read `data/backlog.md`, `data/secondmates.md` if present, every `state/*.meta`, and every `state/*.status`.
