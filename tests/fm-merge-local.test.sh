@@ -44,7 +44,7 @@ write_meta() {  # <state> <id> <repo> <wt>
 test_merge_succeeds_when_head_matches_review() {
   local id state repo wt default before after out
   id="loc-ok1"; state="$TMP_ROOT/ok/state"
-  fm_git_identity
+  fm_git_identity fmtest fmtest@example.invalid
   read -r repo wt default <<<"$(build_case ok "$id")"
   write_meta "$state" "$id" "$repo" "$wt"
   run_review "$state" "$id" >/dev/null 2>&1 || fail "review-diff failed"
@@ -60,7 +60,7 @@ test_merge_succeeds_when_head_matches_review() {
 test_merge_refused_when_head_moved_after_review() {
   local id state repo wt default before out rc
   id="loc-move1"; state="$TMP_ROOT/move/state"
-  fm_git_identity
+  fm_git_identity fmtest fmtest@example.invalid
   read -r repo wt default <<<"$(build_case move "$id")"
   write_meta "$state" "$id" "$repo" "$wt"
   run_review "$state" "$id" >/dev/null 2>&1 || fail "review-diff failed"
@@ -79,7 +79,7 @@ test_merge_refused_when_head_moved_after_review() {
 test_merge_refused_without_recorded_review() {
   local id state repo wt default out rc
   id="loc-noreview1"; state="$TMP_ROOT/noreview/state"
-  fm_git_identity
+  fm_git_identity fmtest fmtest@example.invalid
   read -r repo wt default <<<"$(build_case noreview "$id")"
   write_meta "$state" "$id" "$repo" "$wt"
   # Deliberately skip review-diff: no reviewed_head recorded.
@@ -92,7 +92,7 @@ test_merge_refused_without_recorded_review() {
 test_merge_refused_when_branch_diverged() {
   local id state repo wt default before out rc
   id="loc-div1"; state="$TMP_ROOT/div/state"
-  fm_git_identity
+  fm_git_identity fmtest fmtest@example.invalid
   read -r repo wt default <<<"$(build_case div "$id")"
   write_meta "$state" "$id" "$repo" "$wt"
   run_review "$state" "$id" >/dev/null 2>&1 || fail "review-diff failed"

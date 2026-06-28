@@ -84,16 +84,15 @@ fm_sanitize_untrusted() {
   printf '%s' "$text"
 }
 
-# fm_sanitize_untrusted_stream [per_line_max]
+# fm_sanitize_untrusted_stream
 # Filter form for inherently MULTI-LINE untrusted blobs whose line breaks carry
 # meaning (e.g. a captured tmux pane in fm-peek): sanitize each input line
 # independently while PRESERVING the line structure. Single-line consumers use
-# fm_sanitize_untrusted directly, which folds newlines into spaces.
-# per_line_max is optional (defaults below); callers like fm-peek pipe with no
-# args, so silence SC2120/SC2119 for this intentionally-optional parameter.
-# shellcheck disable=SC2120
+# fm_sanitize_untrusted directly, which folds newlines into spaces. The per-line
+# bound comes from FM_SANITIZE_MAX (or the built-in default); it takes no
+# positional args, so every caller pipes into it with none.
 fm_sanitize_untrusted_stream() {
-  local max=${1:-$FM_SANITIZE_MAX_DEFAULT} line
+  local max=${FM_SANITIZE_MAX:-$FM_SANITIZE_MAX_DEFAULT} line
   case "$max" in ''|*[!0-9]*) max=$FM_SANITIZE_MAX_DEFAULT ;; esac
   while IFS= read -r line || [ -n "$line" ]; do
     fm_sanitize_untrusted "$line" "$max"
