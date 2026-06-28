@@ -89,6 +89,9 @@ fm_sanitize_untrusted() {
 # meaning (e.g. a captured tmux pane in fm-peek): sanitize each input line
 # independently while PRESERVING the line structure. Single-line consumers use
 # fm_sanitize_untrusted directly, which folds newlines into spaces.
+# per_line_max is optional (defaults below); callers like fm-peek pipe with no
+# args, so silence SC2120/SC2119 for this intentionally-optional parameter.
+# shellcheck disable=SC2120
 fm_sanitize_untrusted_stream() {
   local max=${1:-$FM_SANITIZE_MAX_DEFAULT} line
   case "$max" in ''|*[!0-9]*) max=$FM_SANITIZE_MAX_DEFAULT ;; esac
